@@ -97,7 +97,8 @@ enum class ProgressBarOption {
   min_progress,
   max_progress,
   progress_type,
-  stream
+  stream,
+  progress_granularity
 };
 
 template <typename T, ProgressBarOption Id> struct Setting {
@@ -216,6 +217,7 @@ using MinProgress = details::IntegerSetting<details::ProgressBarOption::min_prog
 using MaxProgress = details::IntegerSetting<details::ProgressBarOption::max_progress>;
 using ProgressType = details::Setting<ProgressType, details::ProgressBarOption::progress_type>;
 using Stream = details::Setting<std::ostream &, details::ProgressBarOption::stream>;
+using ProgressGranularity = details::IntegerSetting<details::ProgressBarOption::progress_granularity>;
 } // namespace option
 } // namespace indicators
 

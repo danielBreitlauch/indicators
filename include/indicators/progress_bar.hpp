@@ -32,7 +32,7 @@ class ProgressBar {
                  option::ShowElapsedTime, option::ShowRemainingTime,
                  option::SavedStartTime, option::ForegroundColor,
                  option::FontStyles, option::MinProgress, option::MaxProgress,
-                 option::ProgressType, option::Stream>;
+                 option::ProgressType, option::Stream, option::ProgressGranularity>;
 
 public:
   template <typename... Args,
@@ -84,7 +84,9 @@ public:
                 option::ProgressType{ProgressType::incremental},
                 std::forward<Args>(args)...),
             details::get<details::ProgressBarOption::stream>(
-                option::Stream{std::cout}, std::forward<Args>(args)...)) {
+                option::Stream{std::cout}, std::forward<Args>(args)...),
+            details::get<details::ProgressBarOption::progress_granularity>(
+                option::ProgressGranularity{1000}, std::forward<Args>(args)...)) {
 
     // if progress is incremental, start from min_progress
     // else start from max_progress
@@ -93,6 +95,15 @@ public:
       progress_ = get_value<details::ProgressBarOption::min_progress>();
     else
       progress_ = get_value<details::ProgressBarOption::max_progress>();
+
+    calculateAggregationXStep();
+  }
+
+  void calculateAggregationXStep() {
+    const auto granularity = get_value<details::ProgressBarOption::progress_granularity>();
+    const auto progressSteps = get_value<details::ProgressBarOption::max_progress>() - 
+      get_value<details::ProgressBarOption::min_progress>();
+    aggregation_step_ = progressSteps / granularity;
   }
 
   template <typename T, details::ProgressBarOption id>
@@ -113,6 +124,23 @@ public:
         "Setting has wrong type!");
     std::lock_guard<std::mutex> lock(mutex_);
     get_value<id>() = setting.value;
+  }
+
+  void
+  set_option(const details::Setting<
+             std::size_t, details::ProgressBarOption::max_progress> &setting) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    get_value<details::ProgressBarOption::max_progress>() = setting.value;
+    calculateAggregationXStep();
+  }
+
+  void set_option(
+      details::Setting<std::size_t, details::ProgressBarOption::max_progress>
+          &&setting) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    get_value<details::ProgressBarOption::max_progress>() =
+        std::move(setting).value;
+    calculateAggregationXStep();
   }
 
   void
@@ -141,6 +169,31 @@ public:
     }
   }
 
+  indicators::ProgressBar& operator++() {
+    (*this) += 1;
+    return *this;
+  }
+
+  indicators::ProgressBar& operator+=(uint64_t increment) {
+    bool print = false;
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      
+      progress_ += increment;
+      if (progress_ >= progress_aggregate_) {
+        do {
+          progress_aggregate_ += aggregation_step_;
+        } while (progress_ >= progress_aggregate_);
+        print = true;
+      }
+    }
+
+    if (print)
+      print_progress();
+    save_start_time();
+    return *this;
+  }
+
   void set_progress(size_t new_progress) {
     {
       std::lock_guard<std::mutex> lock(mutex_);
@@ -152,16 +205,11 @@ public:
   }
 
   void tick() {
-    {
-      std::lock_guard<std::mutex> lock{mutex_};
-      const auto type = get_value<details::ProgressBarOption::progress_type>();
-      if (type == ProgressType::incremental)
-        progress_ += 1;
-      else
-        progress_ -= 1;
-    }
-    save_start_time();
-    print_progress();
+    const auto type = get_value<details::ProgressBarOption::progress_type>();
+    if (type == ProgressType::incremental)
+      *this += 1;
+    else
+      *this += -1;
   }
 
   size_t current() {
@@ -176,8 +224,15 @@ public:
   }
 
   void mark_as_completed() {
-    get_value<details::ProgressBarOption::completed>() = true;
-    print_progress();
+    bool previous = false;
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      previous = get_value<details::ProgressBarOption::completed>();
+      get_value<details::ProgressBarOption::completed>() = true;
+    }
+    if (!previous) {
+      print_progress();
+    }
   }
 
 private:
@@ -194,6 +249,8 @@ private:
   }
 
   size_t progress_{0};
+  size_t progress_aggregate_{0};
+  size_t aggregation_step_{1};
   Settings settings_;
   std::chrono::nanoseconds elapsed_;
   std::chrono::time_point<std::chrono::high_resolution_clock> start_time_point_;
