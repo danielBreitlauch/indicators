@@ -103,7 +103,7 @@ public:
     const auto granularity = get_value<details::ProgressBarOption::progress_granularity>();
     const auto progressSteps = get_value<details::ProgressBarOption::max_progress>() - 
       get_value<details::ProgressBarOption::min_progress>();
-    aggregation_step_ = progressSteps / granularity;
+    aggregation_step_ = std::max(1UL, progressSteps / granularity);
   }
 
   template <typename T, details::ProgressBarOption id>
