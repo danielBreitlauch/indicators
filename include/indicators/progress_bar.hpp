@@ -188,7 +188,7 @@ public:
       }
     }
 
-    if (print)
+    if (print && !is_completed())
       print_progress();
     save_start_time();
     return *this;
