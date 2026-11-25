@@ -311,7 +311,8 @@ static inline int mk_wcswidth_cjk(const wchar_t *pwcs, size_t n) {
 // convert UTF-8 string to wstring
 #ifdef _MSC_VER
 static inline std::wstring utf8_decode(const std::string& s) {
-    std::string curLocale = setlocale(LC_ALL, "");
+    std::string curLocale = setlocale(LC_ALL, nullptr);
+    setlocale(LC_ALL, "");
     const char* _Source = s.c_str();
     size_t _Dsize = std::strlen(_Source) + 1;
     wchar_t* _Dest = new wchar_t[_Dsize];
@@ -324,7 +325,9 @@ static inline std::wstring utf8_decode(const std::string& s) {
 }
 #else 
 static inline std::wstring utf8_decode(const std::string& s) {
-    std::string curLocale = setlocale(LC_ALL, "");
+    // setlocale would switch the locale of every thread, uselocale switches only this one's
+    static const locale_t userLocale = newlocale(LC_CTYPE_MASK, "", static_cast<locale_t>(0));
+    const locale_t previousLocale = uselocale(userLocale);
     const char* _Source = s.c_str();
     size_t _Dsize = mbstowcs(NULL, _Source, 0) + 1;
     wchar_t* _Dest = new wchar_t[_Dsize];
@@ -332,7 +335,7 @@ static inline std::wstring utf8_decode(const std::string& s) {
     mbstowcs(_Dest, _Source, _Dsize);
     std::wstring result = _Dest;
     delete[] _Dest;
-    setlocale(LC_ALL, curLocale.c_str());
+    uselocale(previousLocale);
     return result;
 }
 #endif
